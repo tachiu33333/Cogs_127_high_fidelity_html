@@ -1,0 +1,1187 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<title>DoorDash — Nutrition Mode</title>
+<style>
+  /* safe area helpers */
+  :root {
+    --sat: env(safe-area-inset-top, 0px);
+    --sab: env(safe-area-inset-bottom, 0px);
+  }
+  /* ── RESET & BASE ─────────────────────────────── */
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    height: 100%; width: 100%;
+    font-family: 'Helvetica Neue', Arial, sans-serif;
+    background: #f5f5f5;
+    overflow: hidden;
+  }
+
+  /* ── APP CONTAINER — fills the real screen ────── */
+  #app {
+    width: 100%;
+    height: 100dvh;          /* dynamic viewport height = safe on iOS too */
+    background: #f5f5f5;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    position: fixed;
+    top: 0; left: 0;
+  }
+
+  /* ── SCREENS ──────────────────────────────────── */
+  .screen { display: none; flex-direction: column; flex: 1; min-height: 0; overflow: hidden; }
+  .screen.active { display: flex; }
+
+  /* scrollable middle — grows to fill remaining height, clips top/bottom nav */
+  .scroll-area {
+    flex: 1; min-height: 0;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
+  }
+  .scroll-area::-webkit-scrollbar { display: none; }
+
+  /* ── COLORS ───────────────────────────────────── */
+  :root {
+    --red: #FF3008;
+    --red-light: #fff3f0;
+    --dark: #191919;
+    --mid: #767676;
+    --light: #f5f5f5;
+    --border: #e8e8e8;
+    --white: #ffffff;
+    --green: #27ae60;
+    --green-light: #eafaf1;
+    --orange: #e67e22;
+    --orange-light: #fef9f0;
+    --nutr-bg: #f0f7ff;
+    --nutr-accent: #2980b9;
+  }
+
+  /* ── TOP NAV ──────────────────────────────────── */
+  .top-nav {
+    background: var(--white);
+    padding: calc(var(--sat) + 6px) 16px 0;
+    flex-shrink: 0;
+  }
+  .nav-row1 {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 6px 0 8px;
+  }
+  .dd-logo { font-size: 24px; font-weight: 900; color: var(--red); letter-spacing: -1px; }
+  .address-block .line1 {
+    font-size: 13px; font-weight: 700; color: var(--dark);
+    display: flex; align-items: center; gap: 4px;
+  }
+  .address-block .line2 { font-size: 11px; color: var(--mid); }
+  .nav-icons { display: flex; gap: 10px; align-items: center; }
+
+  /* Nutrition toggle pill */
+  .nutr-toggle-pill {
+    display: flex; align-items: center; gap: 5px;
+    background: var(--nutr-bg); border: 1.5px solid var(--nutr-accent);
+    border-radius: 20px; padding: 5px 10px; cursor: pointer;
+    transition: all 0.2s;
+  }
+  .nutr-toggle-pill.off { background: var(--light); border-color: var(--border); }
+  .nutr-toggle-pill span { font-size: 11px; font-weight: 700; color: var(--nutr-accent); }
+  .nutr-toggle-pill.off span { color: var(--mid); }
+  .toggle-switch {
+    width: 28px; height: 16px; background: var(--nutr-accent);
+    border-radius: 8px; position: relative; transition: all 0.2s;
+  }
+  .toggle-switch.off { background: #ccc; }
+  .toggle-knob {
+    width: 12px; height: 12px; background: white; border-radius: 50%;
+    position: absolute; top: 2px; right: 2px; transition: all 0.2s;
+  }
+  .toggle-knob.off { right: auto; left: 2px; }
+
+  /* Search bar */
+  .search-bar {
+    background: var(--light); border-radius: 10px;
+    padding: 10px 14px; display: flex; align-items: center; gap: 8px;
+    margin: 8px 0;
+  }
+  .search-bar span { font-size: 14px; color: var(--mid); }
+
+  /* Tabs */
+  .tabs {
+    display: flex; border-bottom: 1px solid var(--border);
+  }
+  .tab-btn {
+    flex: 1; text-align: center; padding: 10px 0;
+    font-size: 13px; font-weight: 700; color: var(--mid);
+    cursor: pointer; border-bottom: 3px solid transparent;
+    background: none; border-top: none; border-left: none; border-right: none;
+    transition: all 0.15s; font-family: inherit;
+  }
+  .tab-btn.active { color: var(--red); border-bottom-color: var(--red); }
+
+  /* Filter chips */
+  .filter-row {
+    display: flex; gap: 8px; padding: 12px 16px;
+    overflow-x: auto; background: var(--white);
+  }
+  .filter-row::-webkit-scrollbar { display: none; }
+  .filter-chip {
+    white-space: nowrap; padding: 7px 14px;
+    border-radius: 20px; border: 1.5px solid var(--border);
+    font-size: 12px; font-weight: 700; background: var(--white);
+    color: var(--dark); cursor: pointer; transition: all 0.15s;
+    font-family: inherit;
+  }
+  .filter-chip.active { background: var(--dark); color: white; border-color: var(--dark); }
+
+  /* Category pills */
+  .cat-row {
+    display: flex; gap: 10px; padding: 12px 16px;
+    overflow-x: auto; background: var(--white); border-bottom: 1px solid var(--border);
+  }
+  .cat-row::-webkit-scrollbar { display: none; }
+  .cat-item { display: flex; flex-direction: column; align-items: center; gap: 5px; cursor: pointer; min-width: 60px; }
+  .cat-icon {
+    width: 56px; height: 56px; border-radius: 50%;
+    background: var(--light); border: 2px solid var(--border);
+    display: flex; align-items: center; justify-content: center; font-size: 26px;
+  }
+  .cat-label { font-size: 11px; font-weight: 700; color: var(--dark); }
+
+  /* Section header */
+  .section-title { font-size: 20px; font-weight: 900; color: var(--dark); padding: 16px 16px 8px; }
+
+  /* Restaurant card */
+  .rest-card {
+    background: var(--white); border-radius: 16px;
+    margin: 0 16px 14px; overflow: hidden; cursor: pointer;
+    transition: transform 0.1s;
+  }
+  .rest-card:active { transform: scale(0.98); }
+  .rest-img {
+    height: 150px; background: var(--light);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 56px; position: relative;
+  }
+  .rest-badge {
+    position: absolute; top: 10px; left: 10px;
+    background: var(--red); color: white;
+    font-size: 10px; font-weight: 900; padding: 3px 8px; border-radius: 4px;
+  }
+  .rest-nutr-badge {
+    position: absolute; top: 10px; right: 10px;
+    background: var(--nutr-bg); border: 1.5px solid var(--nutr-accent); color: var(--nutr-accent);
+    font-size: 10px; font-weight: 700; padding: 3px 8px; border-radius: 10px;
+  }
+  .rest-info { padding: 12px; }
+  .rest-name { font-size: 16px; font-weight: 900; color: var(--dark); margin-bottom: 4px; }
+  .rest-meta { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--mid); flex-wrap: wrap; }
+  .rest-rating { color: var(--dark); font-weight: 700; }
+  .dot { width: 3px; height: 3px; border-radius: 50%; background: #ccc; display: inline-block; }
+  .promo-tag {
+    display: inline-block; margin-top: 6px;
+    background: #FFF3CD; color: #856404;
+    font-size: 11px; font-weight: 700; padding: 3px 8px; border-radius: 4px;
+  }
+
+  /* ── ITEM SCREEN ──────────────────────────────── */
+  .item-hero {
+    height: 220px; background: #ffe8d6;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 80px; position: relative; flex-shrink: 0;
+  }
+  .back-btn {
+    position: absolute; top: 14px; left: 14px;
+    width: 36px; height: 36px; border-radius: 50%;
+    background: white; border: none; font-size: 20px;
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer; font-weight: 700; color: var(--dark);
+  }
+  .item-body { padding: 16px; background: var(--white); }
+  .item-name { font-size: 24px; font-weight: 900; color: var(--dark); margin-bottom: 6px; }
+  .item-desc { font-size: 13px; color: var(--mid); line-height: 1.6; margin-bottom: 10px; }
+  .item-price { font-size: 20px; font-weight: 800; color: var(--dark); }
+
+  /* Nutrition check button (NEW feature) */
+  .nutr-check-btn {
+    display: flex; align-items: center; gap: 6px;
+    background: var(--nutr-bg); border: 1.5px solid var(--nutr-accent);
+    border-radius: 10px; padding: 8px 12px; cursor: pointer;
+    font-size: 13px; font-weight: 700; color: var(--nutr-accent);
+    width: 100%; margin-top: 12px; font-family: inherit;
+    transition: all 0.15s;
+  }
+  .nutr-check-btn:active { opacity: 0.8; }
+
+  /* Nutrition panel (expands below button) */
+  .nutr-panel {
+    background: var(--nutr-bg); border-radius: 12px;
+    border: 1.5px solid var(--nutr-accent);
+    margin-top: 10px; padding: 14px;
+    display: none;
+  }
+  .nutr-panel.open { display: block; }
+  .nutr-panel-title {
+    font-size: 12px; font-weight: 700; color: var(--nutr-accent);
+    margin-bottom: 10px; display: flex; align-items: center; gap: 5px;
+  }
+  .macro-row { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 6px; margin-bottom: 10px; }
+  .macro-box {
+    background: white; border-radius: 8px; padding: 8px 6px; text-align: center;
+    border: 1px solid var(--border);
+  }
+  .macro-num { font-size: 15px; font-weight: 900; color: var(--dark); }
+  .macro-lbl { font-size: 10px; color: var(--mid); margin-top: 2px; }
+  .nutr-bar-wrap { height: 5px; background: #dce8f5; border-radius: 3px; margin: 3px 0 8px; overflow: hidden; }
+  .nutr-bar { height: 5px; border-radius: 3px; transition: width 0.4s; }
+  .nutr-detail-row { display: flex; justify-content: space-between; font-size: 12px; padding: 2px 0; }
+  .nutr-detail-lbl { color: var(--mid); }
+  .nutr-detail-val { font-weight: 700; color: var(--dark); }
+  .pros-cons-row { display: flex; gap: 8px; margin-top: 10px; }
+  .pros-box { flex: 1; background: var(--green-light); border-radius: 8px; padding: 8px; font-size: 11px; color: #1a5e35; }
+  .cons-box { flex: 1; background: var(--orange-light); border-radius: 8px; padding: 8px; font-size: 11px; color: #7d3c11; }
+  .pc-title { font-weight: 800; font-size: 11px; margin-bottom: 3px; }
+  .pc-item { margin-top: 2px; }
+
+  /* High calorie warning */
+  .warning-banner {
+    display: flex; align-items: center; gap: 8px;
+    background: #FFF3CD; border: 1.5px solid #F59E0B; border-radius: 10px;
+    padding: 10px 12px; margin-top: 10px;
+    font-size: 12px; font-weight: 700; color: #92400E;
+  }
+
+  /* Divider */
+  .divider { height: 8px; background: var(--light); margin: 0 -16px; }
+
+  /* Customization */
+  .custom-section { padding: 14px 16px; background: var(--white); }
+  .custom-title { font-size: 15px; font-weight: 900; color: var(--dark); margin-bottom: 10px; }
+  .custom-option {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 11px 0; border-bottom: 1px solid var(--light);
+    cursor: pointer;
+  }
+  .custom-option:last-child { border-bottom: none; }
+  .custom-left { display: flex; align-items: center; gap: 10px; }
+  .radio-circle {
+    width: 20px; height: 20px; border-radius: 50%;
+    border: 2px solid var(--border); background: var(--white);
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0; transition: all 0.15s;
+  }
+  .radio-circle.checked { border-color: var(--red); background: var(--red); }
+  .radio-circle.checked::after {
+    content: ''; width: 8px; height: 8px;
+    border-radius: 50%; background: white;
+  }
+  .opt-label { font-size: 14px; color: var(--dark); }
+  .opt-price { font-size: 14px; color: var(--mid); }
+
+  /* Add to cart button */
+  .add-btn {
+    background: var(--red); color: white; border: none; border-radius: 12px;
+    padding: 16px; width: 100%;
+    font-size: 16px; font-weight: 800; cursor: pointer;
+    display: flex; justify-content: space-between; align-items: center;
+    font-family: inherit; margin: 16px 0; transition: opacity 0.15s;
+  }
+  .add-btn:active { opacity: 0.85; }
+
+  /* ── CART SCREEN ──────────────────────────────── */
+  .cart-header {
+    background: var(--white); padding: 14px 16px;
+    display: flex; align-items: center; gap: 12px;
+    border-bottom: 1px solid var(--border); flex-shrink: 0;
+  }
+  .cart-back { background: none; border: none; font-size: 22px; cursor: pointer; color: var(--dark); }
+  .cart-title { font-size: 18px; font-weight: 900; color: var(--dark); }
+  .cart-rest-info { padding: 14px 16px; border-bottom: 1px solid var(--light); background: var(--white); }
+  .cart-rest-name { font-size: 17px; font-weight: 900; color: var(--dark); margin-bottom: 2px; }
+  .cart-rest-sub { font-size: 12px; color: var(--mid); }
+  .cart-item {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 14px 16px; border-bottom: 1px solid var(--light); background: var(--white);
+  }
+  .cart-item-info { flex: 1; }
+  .cart-item-name { font-size: 14px; font-weight: 700; color: var(--dark); }
+  .cart-item-sub { font-size: 12px; color: var(--mid); margin-top: 2px; }
+  .qty-ctrl { display: flex; align-items: center; gap: 10px; margin: 0 12px; }
+  .qty-btn {
+    width: 30px; height: 30px; border-radius: 50%;
+    border: 1.5px solid var(--border); background: var(--white);
+    font-size: 18px; display: flex; align-items: center; justify-content: center;
+    cursor: pointer; font-weight: 700; color: var(--dark); font-family: inherit;
+  }
+  .qty-num { font-size: 15px; font-weight: 800; min-width: 16px; text-align: center; }
+  .cart-item-price { font-size: 15px; font-weight: 800; color: var(--dark); }
+
+  /* Nutrition summary in cart (NEW feature) */
+  .nutr-summary-card {
+    margin: 12px 16px; background: var(--nutr-bg);
+    border-radius: 14px; border: 1.5px solid var(--nutr-accent); padding: 14px;
+  }
+  .nutr-summary-title {
+    font-size: 13px; font-weight: 800; color: var(--nutr-accent);
+    margin-bottom: 10px; display: flex; align-items: center; gap: 6px;
+  }
+  .nutr-macro-grid { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 6px; }
+  .nutr-macro-cell {
+    background: white; border-radius: 8px; padding: 8px 4px; text-align: center; border: 1px solid var(--border);
+  }
+  .nutr-macro-num { font-size: 16px; font-weight: 900; color: var(--dark); }
+  .nutr-macro-lbl { font-size: 10px; color: var(--mid); margin-top: 1px; }
+  .goal-bar-wrap { height: 6px; background: #dce8f5; border-radius: 3px; margin: 10px 0 4px; overflow: hidden; }
+  .goal-bar { height: 6px; border-radius: 3px; background: var(--green); transition: width 0.5s; }
+  .goal-label { font-size: 11px; color: var(--mid); }
+  .nutr-personalized-tip {
+    background: var(--green-light); border-radius: 8px;
+    padding: 8px 10px; margin-top: 8px;
+    font-size: 12px; font-weight: 700; color: #1a5e35;
+  }
+
+  /* Add more items */
+  .add-more-row {
+    margin: 10px 16px; background: var(--white); border-radius: 10px;
+    padding: 12px; display: flex; align-items: center; gap: 10px;
+    cursor: pointer; border: 1.5px solid var(--border);
+    transition: border-color 0.15s;
+  }
+  .add-more-row:active { border-color: var(--red); }
+  .add-more-icon { font-size: 22px; color: var(--red); }
+  .add-more-label { font-size: 14px; font-weight: 800; color: var(--red); }
+
+  /* Order summary */
+  .order-summary { padding: 14px 16px; background: var(--white); }
+  .summary-row {
+    display: flex; justify-content: space-between;
+    font-size: 14px; color: var(--mid); padding: 5px 0;
+  }
+  .summary-row.total {
+    color: var(--dark); font-weight: 900; font-size: 16px;
+    border-top: 1px solid var(--border); padding-top: 12px; margin-top: 6px;
+  }
+  .checkout-btn {
+    background: var(--red); color: white; border: none; border-radius: 12px;
+    padding: 17px; width: 100%; font-size: 16px; font-weight: 800;
+    cursor: pointer; font-family: inherit; margin-top: 12px;
+    transition: opacity 0.15s;
+  }
+  .checkout-btn:active { opacity: 0.85; }
+
+  /* ── SURVEY / ONBOARDING ──────────────────────── */
+  #screen-survey { background: var(--white); }
+  .survey-wrap { padding: calc(var(--sat) + 24px) 20px 24px; flex: 1; }
+  .survey-logo { font-size: 28px; font-weight: 900; color: var(--red); margin-bottom: 4px; }
+  .survey-headline { font-size: 22px; font-weight: 900; color: var(--dark); margin-bottom: 4px; }
+  .survey-sub { font-size: 14px; color: var(--mid); margin-bottom: 24px; line-height: 1.5; }
+  .progress-dots { display: flex; gap: 6px; margin-bottom: 24px; }
+  .prog-dot { height: 4px; border-radius: 2px; background: var(--border); flex: 1; transition: background 0.3s; }
+  .prog-dot.done { background: var(--red); }
+  .survey-q { font-size: 17px; font-weight: 800; color: var(--dark); margin-bottom: 4px; }
+  .survey-qsub { font-size: 13px; color: var(--mid); margin-bottom: 16px; }
+  .chips-wrap { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 24px; }
+  .chip {
+    padding: 8px 16px; border-radius: 20px;
+    border: 1.5px solid var(--border); background: var(--white);
+    font-size: 13px; font-weight: 700; color: var(--dark);
+    cursor: pointer; transition: all 0.15s; font-family: inherit;
+  }
+  .chip.selected { background: var(--dark); color: white; border-color: var(--dark); }
+  .survey-next-btn {
+    background: var(--red); color: white; border: none;
+    border-radius: 12px; padding: 16px; width: 100%;
+    font-size: 16px; font-weight: 800; cursor: pointer; font-family: inherit;
+    transition: opacity 0.15s;
+  }
+  .survey-skip { text-align: center; margin-top: 14px; font-size: 13px; color: var(--mid); cursor: pointer; }
+
+  /* ── BOTTOM NAV ───────────────────────────────── */
+  .bottom-nav {
+    background: var(--white); border-top: 1px solid var(--border);
+    display: flex; flex-shrink: 0;
+    padding-bottom: var(--sab);
+  }
+  .nav-btn {
+    flex: 1; padding: 8px 0 10px; text-align: center;
+    cursor: pointer; border: none; background: transparent; font-family: inherit;
+  }
+  .nav-icon { font-size: 24px; display: block; margin-bottom: 1px; }
+  .nav-label { font-size: 10px; font-weight: 700; color: var(--mid); }
+  .nav-btn.active .nav-label { color: var(--red); }
+
+  /* Cart badge */
+  .cart-badge {
+    position: relative; display: inline-block;
+  }
+  .badge-count {
+    position: absolute; top: -4px; right: -8px;
+    background: var(--red); color: white;
+    font-size: 10px; font-weight: 900; width: 16px; height: 16px;
+    border-radius: 50%; display: flex; align-items: center; justify-content: center;
+    display: none;
+  }
+</style>
+</head>
+<body>
+<div id="app">
+
+  <!-- ══════════════════════════════════════════════
+       SCREEN: ONBOARDING SURVEY
+  ══════════════════════════════════════════════ -->
+  <div class="screen active" id="screen-survey">
+    <div class="scroll-area">
+      <div class="survey-wrap">
+        <div class="survey-logo">doordash</div>
+        <div style="height:20px"></div>
+        <div class="survey-headline">Set up nutrition mode</div>
+        <div class="survey-sub">Help us personalize your experience. You can change this anytime in settings.</div>
+
+        <div class="progress-dots">
+          <div class="prog-dot done" id="dot0"></div>
+          <div class="prog-dot" id="dot1"></div>
+          <div class="prog-dot" id="dot2"></div>
+        </div>
+
+        <div id="survey-body"></div>
+
+        <button class="survey-next-btn" id="survey-next-btn" onclick="surveyNext()">Continue</button>
+        <div class="survey-skip" onclick="goScreen('home')">Skip for now</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════
+       SCREEN: HOME / RESTAURANT LIST
+  ══════════════════════════════════════════════ -->
+  <div class="screen" id="screen-home">
+    <!-- Top nav -->
+    <div class="top-nav">
+      <div class="nav-row1">
+        <div class="address-block">
+          <div class="line1">📍 Deliver now ▾</div>
+          <div class="line2">2345 College Ave, San Diego</div>
+        </div>
+        <div class="nav-icons">
+          <div class="nutr-toggle-pill" id="nutr-toggle" onclick="toggleNutrition()">
+            <div class="toggle-switch" id="toggle-sw"><div class="toggle-knob" id="toggle-knob"></div></div>
+            <span id="toggle-label">Nutrition</span>
+          </div>
+        </div>
+      </div>
+      <div class="dd-logo">doordash</div>
+      <div class="search-bar">
+        <span>🔍</span>
+        <span style="font-size:14px;color:var(--mid);">Search for restaurants or cuisines</span>
+      </div>
+      <div class="tabs">
+        <button class="tab-btn active">Delivery</button>
+        <button class="tab-btn">Pickup</button>
+        <button class="tab-btn">Grocery</button>
+      </div>
+    </div>
+
+    <!-- Scrollable content -->
+    <div class="scroll-area">
+      <!-- Categories -->
+      <div class="cat-row">
+        <div class="cat-item"><div class="cat-icon">🍕</div><div class="cat-label">Pizza</div></div>
+        <div class="cat-item"><div class="cat-icon">🍔</div><div class="cat-label">Burgers</div></div>
+        <div class="cat-item"><div class="cat-icon">🌮</div><div class="cat-label">Mexican</div></div>
+        <div class="cat-item"><div class="cat-icon">🍣</div><div class="cat-label">Sushi</div></div>
+        <div class="cat-item"><div class="cat-icon">🥗</div><div class="cat-label">Healthy</div></div>
+        <div class="cat-item"><div class="cat-icon">🍜</div><div class="cat-label">Noodles</div></div>
+        <div class="cat-item"><div class="cat-icon">🍗</div><div class="cat-label">Chicken</div></div>
+      </div>
+
+      <!-- Filters -->
+      <div class="filter-row">
+        <button class="filter-chip active" onclick="setFilter(this)">All</button>
+        <button class="filter-chip" onclick="setFilter(this)">Under 30 min</button>
+        <button class="filter-chip" onclick="setFilter(this)">$0 delivery</button>
+        <button class="filter-chip" onclick="setFilter(this)">Top rated</button>
+        <button class="filter-chip" onclick="setFilter(this)">DashPass</button>
+        <button class="filter-chip nutr-only" onclick="setFilter(this)" style="display:none;background:#e0f0ff;border-color:#2980b9;color:#1a4a7a;">🥗 Healthy picks</button>
+        <button class="filter-chip nutr-only" onclick="setFilter(this)" style="display:none;background:#e0f0ff;border-color:#2980b9;color:#1a4a7a;">⚠ Allergen-free</button>
+      </div>
+
+      <!-- Restaurant list -->
+      <div class="section-title">Good evening, Alex 👋</div>
+
+      <div class="rest-card" onclick="goItem(0)">
+        <div class="rest-img">🌯
+          <div class="rest-badge">DASHPASS</div>
+          <div class="rest-nutr-badge nutr-only" style="display:none;">🥗 Nutrition info</div>
+        </div>
+        <div class="rest-info">
+          <div class="rest-name">Chipotle Mexican Grill</div>
+          <div class="rest-meta">
+            <span class="rest-rating">⭐ 4.8</span>
+            <span class="dot"></span><span>25–35 min</span>
+            <span class="dot"></span><span>$0.99 delivery</span>
+          </div>
+          <div class="promo-tag">20% off, up to $5</div>
+        </div>
+      </div>
+
+      <div class="rest-card" onclick="goItem(1)">
+        <div class="rest-img">🥩</div>
+        <div class="rest-info">
+          <div class="rest-name">Shake Shack</div>
+          <div class="rest-meta">
+            <span class="rest-rating">⭐ 4.7</span>
+            <span class="dot"></span><span>30–40 min</span>
+            <span class="dot"></span><span>$0 delivery</span>
+          </div>
+          <div class="promo-tag">DashPass benefit applied</div>
+        </div>
+      </div>
+
+      <div class="rest-card" onclick="goItem(2)">
+        <div class="rest-img">🥗</div>
+        <div class="rest-info">
+          <div class="rest-name">Sweetgreen</div>
+          <div class="rest-meta">
+            <span class="rest-rating">⭐ 4.6</span>
+            <span class="dot"></span><span>20–30 min</span>
+            <span class="dot"></span><span>$1.99 delivery</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="rest-card" onclick="goItem(3)">
+        <div class="rest-img">🍜</div>
+        <div class="rest-info">
+          <div class="rest-name">Tender Loving Bowl</div>
+          <div class="rest-meta">
+            <span class="rest-rating">⭐ 4.5</span>
+            <span class="dot"></span><span>20–25 min</span>
+            <span class="dot"></span><span>$1.49 delivery</span>
+          </div>
+        </div>
+      </div>
+
+      <div style="height: 16px;"></div>
+    </div>
+
+    <!-- Bottom nav -->
+    <div class="bottom-nav">
+      <button class="nav-btn active" onclick="goScreen('home')">
+        <span class="nav-icon">🏠</span><span class="nav-label" style="color:var(--red);">Home</span>
+      </button>
+      <button class="nav-btn" onclick="goScreen('home')">
+        <span class="nav-icon">🔍</span><span class="nav-label">Search</span>
+      </button>
+      <button class="nav-btn" onclick="goScreen('cart')">
+        <span class="nav-icon">
+          <span class="cart-badge">🛒<span class="badge-count" id="badge-count">0</span></span>
+        </span>
+        <span class="nav-label">Cart</span>
+      </button>
+      <button class="nav-btn" onclick="">
+        <span class="nav-icon">📦</span><span class="nav-label">Orders</span>
+      </button>
+      <button class="nav-btn" onclick="goScreen('survey')">
+        <span class="nav-icon">👤</span><span class="nav-label">Account</span>
+      </button>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════
+       SCREEN: ITEM DETAIL
+  ══════════════════════════════════════════════ -->
+  <div class="screen" id="screen-item">
+    <div class="scroll-area">
+      <div class="item-hero" id="item-hero">
+        🌯
+        <button class="back-btn" onclick="goScreen('home')">←</button>
+      </div>
+      <div class="item-body" id="item-body">
+        <div class="item-name" id="item-name">Chicken Burrito Bowl</div>
+        <div class="item-desc" id="item-desc">Grilled chicken, cilantro-lime rice, black beans, fresh salsa, sour cream, and shredded cheese.</div>
+        <div class="item-price" id="item-price">$10.50</div>
+
+        <!-- HIGH CALORIE WARNING (shown when nutrition on + item cals > 700) -->
+        <div class="warning-banner nutr-feature" id="cal-warning" style="display:none;">
+          ⚠️ <span>High calorie item — <strong id="warning-cals"></strong> kcal per serving</span>
+        </div>
+
+        <!-- CHECK NUTRITION BUTTON (nutrition mode only) -->
+        <button class="nutr-check-btn nutr-feature" id="nutr-check-btn" style="display:none;" onclick="toggleNutrPanel()">
+          🔬 Check nutrition — AI estimated
+          <span id="nutr-arrow" style="margin-left:auto;">▼</span>
+        </button>
+
+        <!-- NUTRITION PANEL -->
+        <div class="nutr-panel" id="nutr-panel">
+          <div class="nutr-panel-title">🤖 AI estimated nutrition (per serving)</div>
+          <div class="macro-row" id="macro-row"></div>
+          <div style="font-size:11px;color:var(--mid);margin-bottom:6px;">% of daily goal (2000 kcal)</div>
+          <div class="nutr-bar-wrap"><div class="nutr-bar" id="nutr-bar" style="background:var(--green);"></div></div>
+          <div id="nutr-details"></div>
+          <div class="pros-cons-row" id="pros-cons"></div>
+        </div>
+      </div>
+
+      <!-- Customization sections -->
+      <div class="divider"></div>
+      <div class="custom-section" id="custom-section-1">
+        <div class="custom-title" id="custom-title-1">Choose your protein</div>
+        <div id="custom-options-1"></div>
+      </div>
+      <div class="divider"></div>
+      <div class="custom-section" id="custom-section-2">
+        <div class="custom-title" id="custom-title-2">Choose your base</div>
+        <div id="custom-options-2"></div>
+      </div>
+
+      <!-- Add to cart -->
+      <div style="padding:0 16px;">
+        <button class="add-btn" id="add-to-cart-btn" onclick="addToCart()">
+          <span id="add-qty-span">1</span>
+          <span>Add to order</span>
+          <span id="add-price-span">$10.50</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════
+       SCREEN: CART
+  ══════════════════════════════════════════════ -->
+  <div class="screen" id="screen-cart">
+    <div class="cart-header" style="flex-shrink:0;padding-top:calc(var(--sat) + 14px)">
+      <button class="cart-back" onclick="goScreen('home')">←</button>
+      <div class="cart-title">Your order</div>
+    </div>
+    <div class="scroll-area">
+      <div class="cart-rest-info">
+        <div class="cart-rest-name" id="cart-rest-name">Chipotle Mexican Grill</div>
+        <div class="cart-rest-sub">2345 College Ave · 25–35 min</div>
+      </div>
+
+      <!-- Cart items rendered here -->
+      <div id="cart-items-list"></div>
+
+      <!-- NUTRITION SUMMARY CARD (NEW — between items and "add more") -->
+      <div class="nutr-summary-card nutr-feature" id="cart-nutr-summary" style="display:none;">
+        <div class="nutr-summary-title">🥗 Nutrition summary for this order</div>
+        <div class="nutr-macro-grid">
+          <div class="nutr-macro-cell"><div class="nutr-macro-num" id="cart-cals">—</div><div class="nutr-macro-lbl">Calories</div></div>
+          <div class="nutr-macro-cell"><div class="nutr-macro-num" id="cart-protein">—</div><div class="nutr-macro-lbl">Protein</div></div>
+          <div class="nutr-macro-cell"><div class="nutr-macro-num" id="cart-carbs">—</div><div class="nutr-macro-lbl">Carbs</div></div>
+          <div class="nutr-macro-cell"><div class="nutr-macro-num" id="cart-fat">—</div><div class="nutr-macro-lbl">Fat</div></div>
+        </div>
+        <div style="font-size:11px;color:var(--mid);margin-top:8px;">% of daily goal (2000 kcal)</div>
+        <div class="goal-bar-wrap"><div class="goal-bar" id="cart-goal-bar"></div></div>
+        <div class="goal-label" id="cart-goal-label"></div>
+        <div class="nutr-personalized-tip" id="cart-nutr-tip"></div>
+      </div>
+
+      <!-- Add more items -->
+      <div class="add-more-row" onclick="goScreen('home')">
+        <span class="add-more-icon">➕</span>
+        <span class="add-more-label">Add more items</span>
+      </div>
+
+      <!-- Order summary -->
+      <div class="order-summary">
+        <div class="summary-row"><span>Subtotal</span><span id="cart-subtotal">$0.00</span></div>
+        <div class="summary-row"><span>Delivery fee</span><span>$0.99</span></div>
+        <div class="summary-row"><span>Fees & estimated tax</span><span id="cart-tax">$0.00</span></div>
+        <div class="summary-row total">
+          <span>Total</span><span id="cart-total">$0.00</span>
+        </div>
+        <button class="checkout-btn" id="checkout-btn">Place order</button>
+      </div>
+      <div style="height:16px;"></div>
+    </div>
+  </div>
+
+</div><!-- end #app -->
+
+<script>
+/* ══════════════════════════════════════════════════════
+   DATA
+══════════════════════════════════════════════════════ */
+const RESTAURANTS = [
+  { name: 'Chipotle Mexican Grill', sub: '2345 College Ave · 25–35 min' },
+  { name: 'Shake Shack', sub: '1234 Gaslamp Blvd · 30–40 min' },
+  { name: 'Sweetgreen', sub: '567 Hillcrest Dr · 20–30 min' },
+  { name: 'Tender Loving Bowl', sub: '890 Pacific Hwy · 20–25 min' },
+];
+
+const ITEMS = [
+  {
+    emoji: '🌯', name: 'Chicken Burrito Bowl', restIdx: 0,
+    desc: 'Grilled chicken, cilantro-lime rice, black beans, fresh salsa, sour cream, and shredded cheese.',
+    basePrice: 10.50,
+    nutrition: { cals: 740, protein: 52, carbs: 73, fat: 23, sodium: 1480, fiber: 14, sugar: 5 },
+    pros: ['High protein (52g)', 'Good fiber content'], cons: ['High sodium', 'High calorie'],
+    customGroups: [
+      { title: 'Choose your protein', options: [
+        { label: 'Grilled Chicken', price: 0, selected: true },
+        { label: 'Steak', price: 2.00 },
+        { label: 'Sofritas (Vegan)', price: 0 },
+      ]},
+      { title: 'Choose your base', options: [
+        { label: 'Cilantro-lime rice', price: 0, selected: true },
+        { label: 'Cauliflower rice', price: 1.50 },
+        { label: 'No rice', price: 0 },
+      ]},
+    ]
+  },
+  {
+    emoji: '🍔', name: 'ShackBurger', restIdx: 1,
+    desc: 'Beef patty, American cheese, ShackSauce, lettuce, tomato on a toasted potato bun.',
+    basePrice: 9.29,
+    nutrition: { cals: 510, protein: 27, carbs: 39, fat: 28, sodium: 710, fiber: 2, sugar: 8 },
+    pros: ['Moderate sodium', 'Good protein'], cons: ['High saturated fat', 'Low fiber'],
+    customGroups: [
+      { title: 'Size', options: [
+        { label: 'Single', price: 0, selected: true },
+        { label: 'Double', price: 3.00 },
+      ]},
+      { title: 'Add-ons', options: [
+        { label: 'No add-ons', price: 0, selected: true },
+        { label: 'Extra cheese', price: 1.00 },
+        { label: 'Avocado', price: 1.50 },
+      ]},
+    ]
+  },
+  {
+    emoji: '🥗', name: 'Harvest Bowl', restIdx: 2,
+    desc: 'Roasted chicken, wild rice, roasted sweet potato, apples, goat cheese, roasted almonds, balsamic vinaigrette.',
+    basePrice: 14.25,
+    nutrition: { cals: 705, protein: 46, carbs: 68, fat: 26, sodium: 540, fiber: 8, sugar: 22 },
+    pros: ['Nutrient-dense', 'High protein', 'Low sodium'], cons: ['High calorie', 'High sugar'],
+    customGroups: [
+      { title: 'Protein', options: [
+        { label: 'Roasted Chicken', price: 0, selected: true },
+        { label: 'Tofu', price: 0 },
+        { label: 'Salmon', price: 3.50 },
+      ]},
+      { title: 'Dressing', options: [
+        { label: 'Balsamic vinaigrette', price: 0, selected: true },
+        { label: 'Caesar', price: 0 },
+        { label: 'On the side', price: 0 },
+      ]},
+    ]
+  },
+  {
+    emoji: '🍜', name: 'Spicy Chicken Ramen', restIdx: 3,
+    desc: 'Rich tonkotsu broth, chashu chicken, soft-boiled egg, nori, bamboo shoots, green onions.',
+    basePrice: 13.99,
+    nutrition: { cals: 620, protein: 38, carbs: 55, fat: 21, sodium: 1820, fiber: 4, sugar: 7 },
+    pros: ['Filling portion', 'Good protein'], cons: ['Very high sodium', 'High calorie'],
+    customGroups: [
+      { title: 'Spice level', options: [
+        { label: 'Mild', price: 0, selected: true },
+        { label: 'Medium', price: 0 },
+        { label: 'Hot', price: 0 },
+        { label: 'Fire 🔥', price: 0 },
+      ]},
+      { title: 'Extras', options: [
+        { label: 'None', price: 0, selected: true },
+        { label: 'Extra egg', price: 1.00 },
+        { label: 'Extra chashu', price: 2.50 },
+      ]},
+    ]
+  },
+];
+
+/* ══════════════════════════════════════════════════════
+   STATE
+══════════════════════════════════════════════════════ */
+let nutritionOn = true;
+let currentItemIdx = 0;
+let surveyStep = 0;
+let cart = [];
+
+const surveySteps = [
+  {
+    q: 'Any medical conditions?',
+    sub: 'We\'ll flag foods that may affect you',
+    options: ['Diabetes', 'Hypertension', 'High cholesterol', 'IBS / Crohn\'s', 'None']
+  },
+  {
+    q: 'Any allergies?',
+    sub: 'We\'ll warn before adding flagged items to your cart',
+    options: ['Tree nuts', 'Gluten / Wheat', 'Dairy', 'Shellfish', 'Soy', 'None']
+  },
+  {
+    q: 'What\'s your dietary goal?',
+    sub: 'Shapes your nutrition recommendations',
+    options: ['Weight loss', 'Muscle gain / High protein', 'Vegan / Plant-based', 'Low sodium', 'Low carb / Keto', 'No preference']
+  }
+];
+
+let surveySelections = [{}, {}, {}];
+
+/* ══════════════════════════════════════════════════════
+   SURVEY
+══════════════════════════════════════════════════════ */
+function renderSurvey() {
+  const s = surveySteps[surveyStep];
+  for (let i = 0; i < 3; i++) {
+    document.getElementById('dot' + i).className = 'prog-dot' + (i <= surveyStep ? ' done' : '');
+  }
+  const body = document.getElementById('survey-body');
+  body.innerHTML = `
+    <div class="survey-q">${s.q}</div>
+    <div class="survey-qsub">${s.sub}</div>
+    <div class="chips-wrap" id="chips-wrap">
+      ${s.options.map((o, i) => `<button class="chip ${surveySelections[surveyStep][i] ? 'selected' : ''}" onclick="toggleChip(this,${i})">${o}</button>`).join('')}
+    </div>
+  `;
+  document.getElementById('survey-next-btn').textContent = surveyStep < 2 ? 'Continue' : 'Get started';
+}
+
+function toggleChip(el, idx) {
+  const isNone = idx === surveySteps[surveyStep].options.length - 1;
+  if (isNone) {
+    surveySelections[surveyStep] = { [idx]: true };
+    document.querySelectorAll('#chips-wrap .chip').forEach((c, i) => {
+      c.classList.toggle('selected', i === idx);
+    });
+  } else {
+    const noneIdx = surveySteps[surveyStep].options.length - 1;
+    surveySelections[surveyStep][noneIdx] = false;
+    document.querySelectorAll('#chips-wrap .chip').forEach((c, i) => {
+      if (i === noneIdx) c.classList.remove('selected');
+    });
+    surveySelections[surveyStep][idx] = !surveySelections[surveyStep][idx];
+    el.classList.toggle('selected');
+  }
+}
+
+function surveyNext() {
+  if (surveyStep < 2) {
+    surveyStep++;
+    renderSurvey();
+  } else {
+    goScreen('home');
+  }
+}
+
+/* ══════════════════════════════════════════════════════
+   NUTRITION TOGGLE
+══════════════════════════════════════════════════════ */
+function toggleNutrition() {
+  nutritionOn = !nutritionOn;
+  applyNutritionMode();
+}
+
+function applyNutritionMode() {
+  const pill = document.getElementById('nutr-toggle');
+  const sw = document.getElementById('toggle-sw');
+  const knob = document.getElementById('toggle-knob');
+  const label = document.getElementById('toggle-label');
+
+  if (nutritionOn) {
+    pill.classList.remove('off');
+    sw.classList.remove('off');
+    knob.classList.remove('off');
+    label.textContent = 'Nutrition';
+  } else {
+    pill.classList.add('off');
+    sw.classList.add('off');
+    knob.classList.add('off');
+    label.textContent = 'Nutrition';
+  }
+
+  // Show/hide all nutr-only and nutr-feature elements
+  document.querySelectorAll('.nutr-only').forEach(el => {
+    el.style.display = nutritionOn ? '' : 'none';
+  });
+  document.querySelectorAll('.nutr-feature').forEach(el => {
+    el.style.display = nutritionOn ? '' : 'none';
+  });
+
+  renderCartNutrition();
+}
+
+/* ══════════════════════════════════════════════════════
+   ITEM SCREEN
+══════════════════════════════════════════════════════ */
+function goItem(idx) {
+  currentItemIdx = idx;
+  const item = ITEMS[idx];
+  document.getElementById('item-hero').childNodes[0].textContent = item.emoji;
+  document.getElementById('item-name').textContent = item.name;
+  document.getElementById('item-desc').textContent = item.desc;
+  document.getElementById('item-price').textContent = '$' + item.basePrice.toFixed(2);
+  document.getElementById('add-price-span').textContent = '$' + item.basePrice.toFixed(2);
+
+  // Warning banner
+  const warnEl = document.getElementById('cal-warning');
+  if (item.nutrition.cals > 700) {
+    document.getElementById('warning-cals').textContent = item.nutrition.cals;
+    warnEl.style.display = nutritionOn ? 'flex' : 'none';
+  } else {
+    warnEl.style.display = 'none';
+  }
+
+  // Nutrition button
+  const nbtn = document.getElementById('nutr-check-btn');
+  nbtn.style.display = nutritionOn ? 'flex' : 'none';
+
+  // Close panel if switching items
+  document.getElementById('nutr-panel').classList.remove('open');
+  document.getElementById('nutr-arrow').textContent = '▼';
+
+  // Fill nutrition panel data
+  renderNutrPanel(item);
+
+  // Customization groups
+  renderCustomGroup(1, item.customGroups[0]);
+  renderCustomGroup(2, item.customGroups[1]);
+
+  goScreen('item');
+}
+
+function renderNutrPanel(item) {
+  const n = item.nutrition;
+  const pct = Math.min(Math.round((n.cals / 2000) * 100), 100);
+  const barColor = pct > 50 ? '#e67e22' : '#27ae60';
+
+  document.getElementById('macro-row').innerHTML = [
+    [n.cals, 'Calories'],
+    [n.protein + 'g', 'Protein'],
+    [n.carbs + 'g', 'Carbs'],
+    [n.fat + 'g', 'Fat'],
+  ].map(([val, lbl]) => `
+    <div class="macro-box">
+      <div class="macro-num">${val}</div>
+      <div class="macro-lbl">${lbl}</div>
+    </div>
+  `).join('');
+
+  document.getElementById('nutr-bar').style.width = pct + '%';
+  document.getElementById('nutr-bar').style.background = barColor;
+
+  document.getElementById('nutr-details').innerHTML = [
+    ['Sodium', n.sodium + 'mg'],
+    ['Fiber', n.fiber + 'g'],
+    ['Sugar', n.sugar + 'g'],
+  ].map(([l, v]) => `
+    <div class="nutr-detail-row">
+      <span class="nutr-detail-lbl">${l}</span>
+      <span class="nutr-detail-val">${v}</span>
+    </div>
+  `).join('');
+
+  document.getElementById('pros-cons').innerHTML = `
+    <div class="pros-box">
+      <div class="pc-title">✅ Pros</div>
+      ${item.pros.map(p => `<div class="pc-item">• ${p}</div>`).join('')}
+    </div>
+    <div class="cons-box">
+      <div class="pc-title">⚠️ Cons</div>
+      ${item.cons.map(c => `<div class="pc-item">• ${c}</div>`).join('')}
+    </div>
+  `;
+}
+
+function toggleNutrPanel() {
+  const panel = document.getElementById('nutr-panel');
+  const arrow = document.getElementById('nutr-arrow');
+  const open = panel.classList.toggle('open');
+  arrow.textContent = open ? '▲' : '▼';
+}
+
+function renderCustomGroup(num, group) {
+  document.getElementById('custom-title-' + num).textContent = group.title;
+  document.getElementById('custom-options-' + num).innerHTML = group.options.map((opt, i) => `
+    <div class="custom-option" onclick="selectOption(${num-1}, ${i})">
+      <div class="custom-left">
+        <div class="radio-circle ${opt.selected ? 'checked' : ''}" id="radio-${num-1}-${i}"></div>
+        <span class="opt-label">${opt.label}</span>
+      </div>
+      <span class="opt-price">${opt.price > 0 ? '+$' + opt.price.toFixed(2) : ''}</span>
+    </div>
+  `).join('');
+}
+
+function selectOption(groupIdx, optIdx) {
+  const item = ITEMS[currentItemIdx];
+  const group = item.customGroups[groupIdx];
+  group.options.forEach((o, i) => o.selected = i === optIdx);
+  renderCustomGroup(groupIdx + 1, group);
+  recalcItemPrice();
+}
+
+function recalcItemPrice() {
+  const item = ITEMS[currentItemIdx];
+  let total = item.basePrice;
+  item.customGroups.forEach(g => g.options.forEach(o => { if (o.selected) total += o.price; }));
+  document.getElementById('add-price-span').textContent = '$' + total.toFixed(2);
+}
+
+/* ══════════════════════════════════════════════════════
+   CART
+══════════════════════════════════════════════════════ */
+function addToCart() {
+  const item = ITEMS[currentItemIdx];
+  let price = item.basePrice;
+  let customSummary = [];
+  item.customGroups.forEach(g => {
+    const sel = g.options.find(o => o.selected);
+    if (sel) { price += sel.price; customSummary.push(sel.label); }
+  });
+
+  const existing = cart.find(c => c.itemIdx === currentItemIdx && c.customSummary.join() === customSummary.join());
+  if (existing) {
+    existing.qty++;
+  } else {
+    cart.push({ itemIdx: currentItemIdx, qty: 1, price, customSummary, restIdx: item.restIdx });
+  }
+
+  updateBadge();
+
+  // Flash button
+  const btn = document.getElementById('add-to-cart-btn');
+  btn.textContent = '✓ Added!';
+  btn.style.background = '#27ae60';
+  setTimeout(() => {
+    btn.style.background = '';
+    btn.innerHTML = `<span id="add-qty-span">1</span><span>Add to order</span><span id="add-price-span">$${item.basePrice.toFixed(2)}</span>`;
+  }, 1200);
+}
+
+function updateBadge() {
+  const total = cart.reduce((s, c) => s + c.qty, 0);
+  const badge = document.getElementById('badge-count');
+  badge.textContent = total;
+  badge.style.display = total > 0 ? 'flex' : 'none';
+}
+
+function renderCart() {
+  const list = document.getElementById('cart-items-list');
+  if (cart.length === 0) {
+    list.innerHTML = '<div style="padding:40px 16px;text-align:center;color:var(--mid);font-size:14px;">Your cart is empty.<br>Add items from a restaurant.</div>';
+    document.getElementById('cart-nutr-summary').style.display = 'none';
+    document.getElementById('cart-subtotal').textContent = '$0.00';
+    document.getElementById('cart-tax').textContent = '$0.00';
+    document.getElementById('cart-total').textContent = '$1.98';
+    document.getElementById('checkout-btn').textContent = 'Place order · $1.98';
+    return;
+  }
+
+  // Set restaurant name from first cart item
+  const firstRest = RESTAURANTS[cart[0].restIdx];
+  document.getElementById('cart-rest-name').textContent = firstRest.name;
+
+  list.innerHTML = cart.map((c, i) => {
+    const item = ITEMS[c.itemIdx];
+    return `
+      <div class="cart-item">
+        <div class="cart-item-info">
+          <div class="cart-item-name">${item.name}</div>
+          <div class="cart-item-sub">${c.customSummary.join(', ')}</div>
+        </div>
+        <div class="qty-ctrl">
+          <button class="qty-btn" onclick="changeQty(${i}, -1)">−</button>
+          <div class="qty-num">${c.qty}</div>
+          <button class="qty-btn" onclick="changeQty(${i}, 1)">+</button>
+        </div>
+        <div class="cart-item-price">$${(c.price * c.qty).toFixed(2)}</div>
+      </div>
+    `;
+  }).join('');
+
+  const subtotal = cart.reduce((s, c) => s + c.price * c.qty, 0);
+  const tax = subtotal * 0.0875;
+  const total = subtotal + 0.99 + tax;
+
+  document.getElementById('cart-subtotal').textContent = '$' + subtotal.toFixed(2);
+  document.getElementById('cart-tax').textContent = '$' + tax.toFixed(2);
+  document.getElementById('cart-total').textContent = '$' + total.toFixed(2);
+  document.getElementById('checkout-btn').textContent = 'Place order · $' + total.toFixed(2);
+
+  renderCartNutrition();
+}
+
+function changeQty(idx, delta) {
+  cart[idx].qty += delta;
+  if (cart[idx].qty <= 0) cart.splice(idx, 1);
+  updateBadge();
+  renderCart();
+}
+
+function renderCartNutrition() {
+  const el = document.getElementById('cart-nutr-summary');
+  if (!nutritionOn || cart.length === 0) { el.style.display = 'none'; return; }
+  el.style.display = 'block';
+
+  let totalCals = 0, totalProtein = 0, totalCarbs = 0, totalFat = 0;
+  cart.forEach(c => {
+    const n = ITEMS[c.itemIdx].nutrition;
+    totalCals += n.cals * c.qty;
+    totalProtein += n.protein * c.qty;
+    totalCarbs += n.carbs * c.qty;
+    totalFat += n.fat * c.qty;
+  });
+
+  document.getElementById('cart-cals').textContent = totalCals;
+  document.getElementById('cart-protein').textContent = totalProtein + 'g';
+  document.getElementById('cart-carbs').textContent = totalCarbs + 'g';
+  document.getElementById('cart-fat').textContent = totalFat + 'g';
+
+  const pct = Math.min(Math.round((totalCals / 2000) * 100), 100);
+  document.getElementById('cart-goal-bar').style.width = pct + '%';
+  document.getElementById('cart-goal-bar').style.background = pct > 60 ? '#e67e22' : '#27ae60';
+  document.getElementById('cart-goal-label').textContent = pct + '% of your 2000 kcal daily goal';
+
+  // Personalized tip based on macros
+  let tip = '';
+  if (totalProtein > 40) tip = '✓ Great protein content for muscle recovery';
+  else if (totalCals < 600) tip = '✓ Light meal — room left in your daily goal';
+  else if (totalCals > 1200) tip = '⚠ Over 60% of daily calories in one order';
+  else tip = '✓ Balanced meal within your daily targets';
+  document.getElementById('cart-nutr-tip').textContent = tip;
+}
+
+/* ══════════════════════════════════════════════════════
+   SCREEN NAVIGATION
+══════════════════════════════════════════════════════ */
+function goScreen(name) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  document.getElementById('screen-' + name).classList.add('active');
+  if (name === 'cart') renderCart();
+  if (name === 'survey') renderSurvey();
+}
+
+function setFilter(el) {
+  document.querySelectorAll('.filter-chip').forEach(c => c.classList.remove('active'));
+  el.classList.add('active');
+}
+
+/* ══════════════════════════════════════════════════════
+   AUTO-SCALE PHONE TO FIT VIEWPORT
+══════════════════════════════════════════════════════ */
+(function scalePhone() {
+  const app = document.getElementById('app');
+  function fit() {
+    const scaleX = window.innerWidth / (390 + 40);
+    const scaleY = window.innerHeight / (844 + 40);
+    const scale = Math.min(scaleX, scaleY, 1);
+    app.style.transform = `scale(${scale})`;
+    app.style.transformOrigin = 'center center';
+  }
+  fit();
+  window.addEventListener('resize', fit);
+})();
+
+/* ══════════════════════════════════════════════════════
+   INIT
+══════════════════════════════════════════════════════ */
+renderSurvey();
+applyNutritionMode();
+</script>
+</body>
+</html>
